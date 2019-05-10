@@ -66,7 +66,6 @@ void *player(void *arg){
         if (mp3_play==0) {
             break;
         }
-        
 
         if (mp3_seek<0) {
             mpg123_seek_frame(mh, mp3_seek, SEEK_CUR);
@@ -86,8 +85,6 @@ void *player(void *arg){
         //printf("%d %d %d\n", (int) buffer, (int) buffer_size, (int) done);
     }
 
-    select_mp3 = -1;
-
     /* clean up */
     free(buffer);
     ao_close(dev);
@@ -95,6 +92,47 @@ void *player(void *arg){
     mpg123_delete(mh);
     mpg123_exit();
     ao_shutdown();
+
+    if (mp3_play==0) {
+        return NULL;
+    }
+    
+    select_mp3++;
+	DIR *dp;
+	struct dirent *de;
+    int no = 1;
+    dp = opendir(dirpath);
+    while ((de = readdir(dp)) != NULL) {
+        int len = strlen(de->d_name);
+        char fn[1024];
+        sprintf(fn, "%s", de->d_name);
+        
+        if (fn[len-4] == '.' && fn[len-3] == 'm' && fn[len-2] == 'p' && fn[len-1] == '3') {
+            if (no == select_mp3) {
+                sprintf(now_playing, "%s", de->d_name);
+                no++;
+                break;
+            }
+            no++;
+        }
+    }
+    if (select_mp3<1 || select_mp3>=no){
+        select_mp3 = -1;
+    }
+    else{
+        mp3_play = 0;
+        sleep(1);
+        mp3_play = 1;
+        mp3_pause = 0;
+        mp3_seek = 0;
+        pthread_create(&tid,NULL,&player,now_playing);
+    }
+    system("clear");
+    if (select_mp3 > 0)
+        printf("Now Playing : %s\n\n", now_playing);
+    
+    printf("Help :\nopen to open music\nstop to stop music\n   p to play/pause music\n   , to rewind music\n   . to forward music\nprev to play previous music\nnext to play next music\nexit to exit mp3player\n\n");
+    printf("Command : \n");
 }
 
 int main(int argc, char *argv[])
