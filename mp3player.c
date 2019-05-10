@@ -99,9 +99,6 @@ void *player(void *arg){
 
 int main(int argc, char *argv[])
 {
-    if(argc < 2)
-        exit(0);
-
 	DIR *dp;
 	struct dirent *de;
     
