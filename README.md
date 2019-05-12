@@ -163,4 +163,295 @@ void* join()
 ```
 Fungsi ini digunakan untuk menampilkan nama file .mp3 nya di mp3 player.
 
+Kemudian sekarang beralih ke mp3 playernya
+```
+ao_initialize();
+    driver = ao_default_driver_id();
+    mpg123_init();
+    mh = mpg123_new(NULL, &err);
+    buffer_size = mpg123_outblock(mh);
+    buffer = (unsigned char*) malloc(buffer_size * sizeof(unsigned char));
+```
+Digunakan untuk initialization dari mp3 playernya.
 
+```
+mpg123_open(mh, filePath);
+    mpg123_getformat(mh, &rate, &channels, &encoding);
+```
+Digunakan untuk membuka file dan decoding format
+
+```
+ format.bits = mpg123_encsize(encoding) * BITS;
+    format.rate = rate;
+    format.channels = channels;
+    format.byte_format = AO_FMT_NATIVE;
+    format.matrix = 0;
+    dev = ao_open_live(driver, &format, NULL);
+```
+Digunakan untuk set output format dan membuka output device
+
+```
+while (1){
+        if (mp3_pause==1){
+            sleep(1);
+            continue;
+        }
+        if (mp3_play==0) {
+            break;
+        }
+
+        if (mp3_seek<0) {
+            mpg123_seek_frame(mh, mp3_seek, SEEK_CUR);
+            mp3_seek = 0;
+        }
+        else if (mp3_seek>0){
+            mpg123_seek_frame(mh, mp3_seek, SEEK_CUR);
+            mp3_seek = 0;
+        }
+        
+        
+        if(mpg123_read(mh, buffer, buffer_size, &done) == MPG123_OK)
+            ao_play(dev, buffer, done);
+        else
+            break;
+        
+        //printf("%d %d %d\n", (int) buffer, (int) buffer_size, (int) done);
+```
+Digunakan untuk decode dan juga untuk memainkan mp3nya
+
+```
+free(buffer);
+    ao_close(dev);
+    mpg123_close(mh);
+    mpg123_delete(mh);
+    mpg123_exit();
+    ao_shutdown();
+
+    if (mp3_play==0) {
+        return NULL;
+    }
+    
+    select_mp3++;
+	DIR *dp;
+	struct dirent *de;
+    int no = 1;
+    dp = opendir(mountpoint);
+    while ((de = readdir(dp)) != NULL) {
+        int len = strlen(de->d_name);
+        char fn[1024];
+        sprintf(fn, "%s", de->d_name);
+        
+        if (fn[len-4] == '.' && fn[len-3] == 'm' && fn[len-2] == 'p' && fn[len-1] == '3') {
+            if (no == select_mp3) {
+                sprintf(now_playing, "%s", de->d_name);
+                no++;
+                break;
+            }
+            no++;
+        }
+    }
+    if (select_mp3<1 || select_mp3>=no){
+        select_mp3 = -1;
+    }
+    else{
+        mp3_play = 0;
+        sleep(1);
+        mp3_play = 1;
+        mp3_pause = 0;
+        mp3_seek = 0;
+        pthread_create(&tid[1],NULL,&player,now_playing);
+    }
+    system("clear");
+    if (select_mp3 > 0)
+        printf("Now Playing : %s\n\n", now_playing);
+    
+    printf("Help :\nopen to open music\nstop to stop music\n   p to play/pause music\n   , to rewind music\n   . to forward music\nprev to play previous music\nnext to play next music\nexit to exit mp3player\n\n");
+    printf("Command : \n");
+    return NULL;
+```
+Digunakan untuk membersihkan mp3 setelah selesai dan juga untuk menampilkan menu pada saat di mp3 player
+
+Untuk fungsi mainnya, pertama dijalankan dulu FUSEnya, kemudian baru menjalankan mp3 player. Sebagian besar di main hanya merupakan user interface untuk mp3 playernya.
+```
+int main(int argc, char *argv[])
+{
+	DIR *dp;
+	struct dirent *de;
+    struct stat st_mountpoint = {0};
+
+    if (argc!=2){
+        printf("Usage : %s /path/mountpoint_directory\n", argv[0]);
+        return 0;
+    }
+
+
+    if (stat(argv[1], &st_mountpoint) == -1) {
+        mkdir(argv[1], 0777);
+    }
+    
+    
+    if (fork() == 0)
+    {
+        umask(0);
+        fuse_main(argc, argv, &xmp_oper, NULL);
+    }
+
+    strcpy(mountpoint,argv[1]);
+    
+    //system("clear");
+    while(1){
+        if (select_mp3 > 0)
+            printf("Now Playing : %s\n\n", now_playing);
+        
+        printf("Help :\nopen to open music\nstop to stop music\n   p to play/pause music\n   , to rewind music\n   . to forward music\nprev to play previous music\nnext to play next music\nexit to exit mp3player\n\n");
+        printf("Command : \n");
+        scanf("%s", type);
+        system("clear");
+        if (strcmp(type,"p")==0) {
+            if (mp3_pause==1)
+                mp3_pause = 0;
+            else
+                mp3_pause = 1;
+        }
+        else if (strcmp(type,"open")==0){
+            printf("PlayList :\n");
+            int no = 1;
+            dp = opendir(mountpoint);
+            while ((de = readdir(dp)) != NULL) {
+                int len = strlen(de->d_name);
+                char fn[1024];
+                sprintf(fn, "%s", de->d_name);
+                
+                if (fn[len-4] == '.' && fn[len-3] == 'm' && fn[len-2] == 'p' && fn[len-1] == '3') {
+                    printf("%3d. %s\n", no++, fn);
+                }
+            }
+
+            printf("\n\nPutar nomor : ");
+            int selected_before = select_mp3;
+            scanf("%d", &select_mp3);
+            if (select_mp3<1 || select_mp3 >= no) {
+                printf("Lagu tidak ditemukan!\n");
+                select_mp3 = selected_before;
+                sleep(2);
+                system("clear");
+                continue;
+            }
+            
+
+            no=1;
+            dp = opendir(mountpoint);
+            while ((de = readdir(dp)) != NULL) {
+                int len = strlen(de->d_name);
+                char fn[1024];
+                sprintf(fn, "%s", de->d_name);
+                
+                if (fn[len-4] == '.' && fn[len-3] == 'm' && fn[len-2] == 'p' && fn[len-1] == '3') {
+                    if (no == select_mp3) {
+                        sprintf(now_playing, "%s", de->d_name);
+                        break;
+                    }
+                    no++;
+                }
+            }
+
+            printf("Opening %s\n", now_playing);
+            mp3_play = 0;
+            sleep(1);
+            mp3_play = 1;
+            mp3_pause = 0;
+            mp3_seek = 0;
+            pthread_create(&tid[1],NULL,&player,now_playing);
+            system("clear");
+        }
+        else if (strcmp(type,"next")==0){
+            select_mp3++;
+            int no = 1;
+            dp = opendir(mountpoint);
+            while ((de = readdir(dp)) != NULL) {
+                int len = strlen(de->d_name);
+                char fn[1024];
+                sprintf(fn, "%s", de->d_name);
+                
+                if (fn[len-4] == '.' && fn[len-3] == 'm' && fn[len-2] == 'p' && fn[len-1] == '3') {
+                    if (no == select_mp3) {
+                        sprintf(now_playing, "%s", de->d_name);
+                        no++;
+                        break;
+                    }
+                    no++;
+                }
+            }
+            if (select_mp3<1 || select_mp3>=no){
+                printf("Lagu tidak ditemukan!\n");
+                select_mp3--;
+                sleep(2);
+                system("clear");
+                continue;
+            }
+
+            printf("Opening %s\n", now_playing);
+            mp3_play = 0;
+            sleep(1);
+            mp3_play = 1;
+            mp3_pause = 0;
+            mp3_seek = 0;
+            pthread_create(&tid[1],NULL,&player,now_playing);
+            system("clear");
+        }
+        else if (strcmp(type,"prev")==0){
+            select_mp3--;
+            int no = 1;
+            dp = opendir(mountpoint);
+            while ((de = readdir(dp)) != NULL) {
+                int len = strlen(de->d_name);
+                char fn[1024];
+                sprintf(fn, "%s", de->d_name);
+                
+                if (fn[len-4] == '.' && fn[len-3] == 'm' && fn[len-2] == 'p' && fn[len-1] == '3') {
+                    if (no == select_mp3) {
+                        sprintf(now_playing, "%s", de->d_name);
+                        no++;
+                        break;
+                    }
+                    no++;
+                }
+            }
+            if (select_mp3<1 || select_mp3>=no){
+                printf("Lagu tidak ditemukan!\n");
+                select_mp3++;
+                sleep(2);
+                system("clear");
+                continue;
+            }
+
+            printf("Opening %s\n", now_playing);
+            mp3_play = 0;
+            sleep(1);
+            mp3_play = 1;
+            mp3_pause = 0;
+            mp3_seek = 0;
+            pthread_create(&tid[1],NULL,&player,now_playing);
+            system("clear");
+        }
+        else if (strcmp(type,",")==0)
+            mp3_seek -= 200;
+        else if (strcmp(type,".")==0)
+            mp3_seek += 200;
+        else if (strcmp(type,"exit")==0){
+            mp3_play = 0;
+            printf("Closing mp3player\n");
+            sleep(2);
+            fuse_unmount(mountpoint, NULL);
+            break;
+        }
+        else if (strcmp(type,"stop")==0){
+            mp3_play = 0;
+            printf("Stop playing %s\n", now_playing);
+            select_mp3 = -1;
+            sleep(1);
+            system("clear");
+        }
+    }
+}
+```
